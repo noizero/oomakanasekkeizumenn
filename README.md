@@ -1,0 +1,2 @@
+# oomakanasekkeizumenn
+船舶を大まかに設計可能なツール
