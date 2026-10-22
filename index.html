@@ -40,7 +40,7 @@
         <div class="metric"><span>喫水 T</span><strong id="metricDraft">1,800 <small>mm</small></strong></div>
       </div>
       <div class="model-grid">
-        <article class="view-card view-3d"><div class="view-heading"><div><strong>3D 船体モデル</strong><small>ドラッグで回転・ホイールで拡大縮小</small></div><span class="view-tag">LIVE</span></div><div id="threeHost" class="three-host"><div class="loading">3Dモデルを準備中…</div></div><div class="view-footer"><span>中心線対称を初期設定</span><span id="modelStatus">モデル更新待ち</span></div></article>
+        <article class="view-card view-3d"><div class="view-heading"><div><strong>3D 船体モデル</strong><small>ドラッグで回転・ホイールで拡大縮小</small></div><span class="view-tag">LIVE</span></div><div id="threeHost" class="three-host"><div class="loading">3Dモデルを準備中…</div></div><div class="view-footer"><label class="check"><input id="hullTransparent" type="checkbox" checked> 船体を半透明にして内部構造を表示</label><span id="modelStatus">モデル更新待ち</span></div></article>
         <article class="view-card"><div class="view-heading"><div><strong>平面図</strong><small>上から見た船体</small></div><span class="view-tag">TOP</span></div><div id="topView" class="drawing"></div></article>
         <article class="view-card"><div class="view-heading"><div><strong>側面図</strong><small>横から見た船体</small></div><span class="view-tag">SIDE</span></div><div id="sideView" class="drawing"></div></article>
         <article class="view-card"><div class="view-heading"><div><strong>正面図</strong><small>前から見た船体</small></div><span class="view-tag">FRONT</span></div><div id="frontView" class="drawing"></div></article>
@@ -60,7 +60,7 @@
         <article class="card"><div class="card-title"><h2>船首・船尾形状</h2><span class="muted">プリセット</span></div>
           <div class="input-grid">
             <label>船首形状<select id="bow"><option value="bulbous">バルバス・バウ</option><option value="clipper">突出型</option><option value="vertical">垂直船首</option><option value="raked" selected>傾斜・鋭角</option><option value="custom">カスタム</option></select></label>
-            <label>船尾形状<select id="stern"><option value="transom" selected>トランサム</option><option value="cruiser">巡洋艦型・丸型</option><option value="counter">カウンター型</option><option value="passenger">旅客・貨客向け</option><option value="custom">カスタム</option></select></label>
+            <label>船尾形状<select id="stern"><option value="transom" selected>トランサム</option><option value="tanker">タンカー型（船尾が垂直に降りる形）</option><option value="cruiser">巡洋艦型・丸型</option><option value="counter">カウンター型</option><option value="passenger">旅客・貨客向け</option><option value="custom">カスタム</option></select></label>
           </div>
           <div class="note">形状プリセットは初期形状です。実船の設計線図や規則適合を示すものではありません。</div>
         </article>
@@ -69,7 +69,7 @@
     <section id="panel-structure" class="panel">
       <div class="two-col">
         <article class="card"><div class="card-title"><h2>構造部材一覧</h2><button id="addMemberBtn" class="primary">＋ 部材を追加</button></div>
-          <p class="muted">外板・甲板・キール・肋骨などを独立したデータとして管理します。現在は初期管理機能です。</p>
+          <p class="muted">外板・甲板・キール・肋骨などを独立したデータとして管理します。追加した部材は3Dモデルと3面図に色分け表示します。</p>
           <div class="table-wrap"><table><thead><tr><th>部材名</th><th>種類</th><th>位置 X (mm)</th><th>高さ (mm)</th><th>数量</th><th>操作</th></tr></thead><tbody id="memberRows"></tbody></table></div>
         </article>
         <article class="card"><div class="card-title"><h2>構造データの考え方</h2></div><ul class="feature-list"><li>船体外板・外形</li><li>内部構造部材</li><li>貨物倉・タンク・機関室などの区画</li><li>縦強度計算などに使う計算区間</li></ul><div class="note">区画と計算区間は別々に管理します。部材数だけでは接続状態や強度を判定しません。</div></article>

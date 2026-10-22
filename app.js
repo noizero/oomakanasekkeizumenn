@@ -2,7 +2,7 @@
   "use strict";
   const $ = id => document.getElementById(id);
   const defaults = {length:30000,beam:6000,depth:3000,draft:1800,density:1025,stations:21,symmetry:true,bow:"raked",stern:"transom",members:[]};
-  let design = structuredClone(defaults), scene, camera, renderer, hullMesh, resizeObserver, renderRequested=false;
+  let design = structuredClone(defaults), scene, camera, renderer, hullMesh, structureGroup, resizeObserver, renderRequested=false;
   const inputIds=["length","beam","depth","draft","density","stations","symmetry","bow","stern"];
   const fmt=n=>Math.round(n).toLocaleString("ja-JP");
   const clamp=(x,a,b)=>Math.max(a,Math.min(b,x));
@@ -24,22 +24,37 @@
     t=clamp(t,0,1);
     let w;
     // Stable, positive, continuous fullness curve with no abrupt disappearing ends.
-    const base=Math.pow(Math.sin(Math.PI*t),0.62);
+    const base=Math.pow(Math.max(0,Math.sin(Math.PI*t)),0.62);
     w=(B/2)*base*(0.91+0.09*Math.cos(2*Math.PI*(t-.5)));
+    // Tanker-like vertical stern: keep a broad transom section at the aft end,
+    // then blend smoothly into the normal hull fullness over the first 12% of length.
+    if(design.stern==="tanker"){
+      const u=clamp(t/.12,0,1), smooth=u*u*(3-2*u);
+      w=(B*.44)*(1-smooth)+w*smooth;
+    }
     // Bow region: last ~24% of length, smooth transitions to the stem.
     const bowU=clamp((t-.76)/.24,0,1);
     if(design.bow==="raked")w*=1-0.72*Math.pow(bowU,1.25);
     else if(design.bow==="clipper")w*=1-0.48*Math.pow(bowU,1.1);
     else if(design.bow==="vertical")w*=1-0.12*Math.pow(bowU,1.2);
     else if(design.bow==="bulbous"){
-      // Main stem tapers normally; a small forward bulb broadens locally and remains joined.
+      // Main stem tapers normally; a visible local bulb broadens near the waterline region.
       w*=1-0.64*Math.pow(bowU,1.15);
       const bulb=Math.exp(-Math.pow((t-.91)/.045,2));
-      w+=B*.055*bulb*Math.sin(Math.PI*t);
+      w+=B*.075*bulb*Math.sin(Math.PI*t);
+    } else if(design.bow==="vertical"){
+      w*=1-0.12*Math.pow(bowU,1.2);
+      const u=clamp((t-.88)/.12,0,1), smooth=u*u*(3-2*u);
+      w=w*(1-smooth)+(B*.22)*smooth;
+    } else if(design.bow==="clipper"){
+      w*=1-0.48*Math.pow(bowU,1.1);
+      const u=clamp((t-.88)/.12,0,1), smooth=u*u*(3-2*u);
+      w=w*(1-smooth)+(B*.10)*smooth;
     } else w*=1-0.5*Math.pow(bowU,1.2);
     // Stern shape, smooth and independently selectable.
     const sternU=clamp((.24-t)/.24,0,1);
-    if(design.stern==="cruiser")w*=1-0.58*Math.pow(sternU,1.4);
+    if(design.stern==="tanker") { /* width is controlled by the vertical-transom blend above */ }
+    else if(design.stern==="cruiser")w*=1-0.58*Math.pow(sternU,1.4);
     else if(design.stern==="counter")w*=1-0.24*Math.pow(sternU,1.2);
     else if(design.stern==="passenger")w*=1-0.32*Math.pow(sternU,1.1);
     else if(design.stern==="transom")w*=1-0.08*Math.pow(sternU,2);
@@ -91,14 +106,15 @@
     scene.add(new THREE.HemisphereLight(0xffffff,0x70879a,2.1));
     const light=new THREE.DirectionalLight(0xffffff,2.2);light.position.set(-20,-25,35);scene.add(light);
     const grid=new THREE.GridHelper(40,20,0xa7b8c5,0xd8e1e8);grid.rotation.x=Math.PI/2;grid.position.z=-.2;scene.add(grid);
-    hullMesh=new THREE.Mesh(buildHullGeometry(),new THREE.MeshStandardMaterial({color:0x2d8193,metalness:.12,roughness:.48,side:THREE.DoubleSide}));
+    hullMesh=new THREE.Mesh(buildHullGeometry(),new THREE.MeshStandardMaterial({color:0x2d8193,metalness:.12,roughness:.48,side:THREE.DoubleSide,transparent:true,opacity:$("hullTransparent").checked?.34:1,depthWrite:!$("hullTransparent").checked}));
     scene.add(hullMesh);
+    structureGroup=new THREE.Group();scene.add(structureGroup);
     const edges=new THREE.LineSegments(new THREE.EdgesGeometry(hullMesh.geometry,28),new THREE.LineBasicMaterial({color:0x17485d,transparent:true,opacity:.34}));hullMesh.add(edges);
     let drag=false,px=0,py=0,yaw=-.55,pitch=.38,dist=1;
     function frame(){
       const L=design.length/1000,B=design.beam/1000,D=design.depth/1000;
-      const maxDim=Math.max(L,B,D),targetDist=maxDim*1.65;
-      dist=clamp(dist, maxDim*.65,maxDim*5);
+      const maxDim=Math.max(L,B,D);
+      dist=clamp(dist, maxDim*.65,maxDim*7);
       camera.position.set(dist*Math.cos(pitch)*Math.cos(yaw),dist*Math.cos(pitch)*Math.sin(yaw),dist*Math.sin(pitch));
       camera.up.set(0,0,1);camera.lookAt(0,0,D*.42);
       camera.near=Math.max(.001,maxDim/10000);camera.far=maxDim*20;camera.updateProjectionMatrix();
@@ -114,11 +130,43 @@
     resizeObserver=new ResizeObserver(()=>{if(!renderer)return;camera.aspect=host.clientWidth/Math.max(1,host.clientHeight);renderer.setSize(host.clientWidth,host.clientHeight);frame()});resizeObserver.observe(host);
     window._shipFrame=frame;frame();
   }
+  function makeLine(points,color=0xd66a28,opacity=1){
+    const g=new THREE.BufferGeometry().setFromPoints(points.map(p=>new THREE.Vector3(p[0],p[1],p[2])));
+    return new THREE.Line(g,new THREE.LineBasicMaterial({color,transparent:opacity<1,opacity}));
+  }
+  function rebuildStructure3D(){
+    if(!structureGroup)return;
+    while(structureGroup.children.length){const o=structureGroup.children.pop();if(o.geometry)o.geometry.dispose();if(o.material)o.material.dispose();}
+    const L=design.length/1000,B=design.beam/1000,D=design.depth/1000;
+    design.members.forEach(m=>{
+      const x=clamp(Number(m.x)||0,0,design.length)/1000-L/2, z=clamp(Number(m.z)||0,0,design.depth)/1000;
+      const type=String(m.type||""); const count=clamp(Math.round(Number(m.count)||1),1,80);
+      if(type.includes("キール")||type.includes("縦通")||type.includes("外板")||type.includes("甲板")){
+        const y=type.includes("キール")?0:type.includes("甲板")?0:(type.includes("外板")?B*.46:0);
+        const zz=type.includes("キール")?D*.07:type.includes("甲板")?D*.94:z;
+        const pts=[];for(let i=0;i<=40;i++){const st=station(i/40);pts.push([st.x,y===0?0:Math.sign(y)*st.half,zz]);}
+        structureGroup.add(makeLine(pts,type.includes("キール")?0xffa126:0x2482e0,.98));
+      }else if(type.includes("肋骨")||type.includes("隔壁")||type.includes("床板")||type.includes("横桁")){
+        for(let k=0;k<count;k++){
+          const xx=count===1?x:clamp(x+(k-(count-1)/2)*(L/Math.max(12,count)), -L/2,L/2);
+          const t=clamp((xx+L/2)/L,0,1), st=station(t), pts=[];
+          if(type.includes("隔壁")){pts.push([xx,-st.half,D*.08],[xx,-st.half,D*.92],[xx,st.half,D*.92],[xx,st.half,D*.08],[xx,-st.half,D*.08]);}
+          else if(type.includes("床板")){pts.push([xx,-st.half,z],[xx,st.half,z]);}
+          else {for(let j=0;j<=32;j++)pts.push(crossSection({...st,x:xx},2*Math.PI*j/32));}
+          structureGroup.add(makeLine(pts,type.includes("肋骨")?0xe05a35:0x9b59b6,.98));
+        }
+      }else{
+        structureGroup.add(makeLine([[x,-B*.35,z],[x,B*.35,z]],0x2c9a64,.98));
+      }
+    });
+  }
+  function updateHullMaterial(){if(!hullMesh)return;const transparent=$("hullTransparent").checked;hullMesh.material.transparent=transparent;hullMesh.material.opacity=transparent?.30:1;hullMesh.material.depthWrite=!transparent;hullMesh.material.needsUpdate=true;}
   function update3D(){
     if(!scene||!hullMesh||!renderer)return;
     const old=hullMesh.geometry;hullMesh.geometry=buildHullGeometry();old.dispose();
     const oldEdge=hullMesh.children[0];if(oldEdge){hullMesh.remove(oldEdge);oldEdge.geometry.dispose();oldEdge.material.dispose();}
-    hullMesh.add(new THREE.LineSegments(new THREE.EdgesGeometry(hullMesh.geometry,28),new THREE.LineBasicMaterial({color:0x17485d,transparent:true,opacity:.34})));
+    hullMesh.add(new THREE.LineSegments(new THREE.EdgesGeometry(hullMesh.geometry,28),new THREE.LineBasicMaterial({color:0x17485d,transparent:true,opacity:.55})));
+    updateHullMaterial();rebuildStructure3D();
     if(window._shipFrame)window._shipFrame();
     $("modelStatus").textContent="モデル更新済み";
   }
@@ -137,24 +185,29 @@
     const points=top.concat(bottom.reverse()).map(p=>p.join(",")).join(" ");
     let c=`<polygon points="${points}" fill="#d3e9ed" stroke="#267b8d" stroke-width="2"/><line x1="${left}" y1="${mid}" x2="${right}" y2="${mid}" stroke="#8d9ca8" stroke-dasharray="5 4"/><text x="${left}" y="20" font-size="11" fill="#526777">船尾</text><text x="${right}" y="20" text-anchor="end" font-size="11" fill="#526777">船首</text>`;
     c+=dimH(left,right,220,`全長 ${fmt(L)} mm`,mid+75,mid+75);
+    // Structure overlay: keel/longitudinals and frames are highlighted independently of hull fill.
+    c+=`<line x1="${left}" y1="${mid}" x2="${right}" y2="${mid}" stroke="#f0a020" stroke-width="2.5"/>`;
+    for(const m of design.members){const x=left+clamp(Number(m.x)||0,0,L)*scaleX;const type=String(m.type||"");if(type.includes("肋骨")||type.includes("横桁")||type.includes("隔壁"))c+=`<line x1="${x}" y1="${mid-58}" x2="${x}" y2="${mid+58}" stroke="#e05a35" stroke-width="1.7" opacity=".9"/>`;else if(type.includes("縦通")||type.includes("キール"))c+=`<line x1="${left}" y1="${mid+(Number(m.z)||0)/Math.max(1,design.depth)*24}" x2="${right}" y2="${mid+(Number(m.z)||0)/Math.max(1,design.depth)*24}" stroke="#2482e0" stroke-width="1.8"/>`;}
     c+=dimV(mid-72,mid+72,590,`幅 ${fmt(B)}`,right, right);
     return svgBase(c,"平面図");
   }
   function svgSide(){
     const L=design.length,D=design.depth,T=design.draft,left=70,right=550,top=65,bottom=178,sx=(right-left)/L,sz=(bottom-top)/D;
     let sternTop=.03,bowTop=.12,sternBottom=0,bowBottom=.015;
-    if(design.stern==="cruiser"){sternTop=.15;sternBottom=.06;}
+    if(design.stern==="tanker"){sternTop=0;sternBottom=0;}
+    else if(design.stern==="cruiser"){sternTop=.15;sternBottom=.06;}
     else if(design.stern==="counter"){sternTop=.07;sternBottom=.025;}
     else if(design.stern==="passenger"){sternTop=.10;sternBottom=.035;}
-    if(design.bow==="vertical"){bowTop=.025;bowBottom=.02;}
-    else if(design.bow==="clipper"){bowTop=.09;bowBottom=0;}
-    else if(design.bow==="bulbous"){bowTop=.15;bowBottom=-.015;}
-    else if(design.bow==="raked"){bowTop=.18;bowBottom=.015;}
+    if(design.bow==="vertical"){bowTop=0;bowBottom=0;}
+    else if(design.bow==="clipper"){bowTop=.14;bowBottom=-.025;}
+    else if(design.bow==="bulbous"){bowTop=.20;bowBottom=-.035;}
+    else if(design.bow==="raked"){bowTop=.24;bowBottom=.025;}
     const xSL=left+L*sternTop*sx,xBL=left+L*sternBottom*sx;
     const xST=right-L*bowTop*sx,xBT=right-L*bowBottom*sx;
     const yDeck=top,yKeel=bottom-D*.06*sz,water=bottom-T*sz;
     let c=`<polygon points="${xSL},${yDeck} ${xST},${yDeck} ${xBT},${yKeel} ${xBL},${yKeel}" fill="#d3e9ed" stroke="#267b8d" stroke-width="2" stroke-linejoin="round"/><line x1="${left}" y1="${water}" x2="${right}" y2="${water}" stroke="#168c91" stroke-dasharray="6 4" stroke-width="1.5"/><text x="${right}" y="${water-5}" text-anchor="end" fill="#168c91" font-size="10">喫水線 T=${fmt(T)} mm</text><text x="${left}" y="20" font-size="11" fill="#526777">船尾</text><text x="${right}" y="20" text-anchor="end" font-size="11" fill="#526777">船首</text>`;
     c+=dimH(left,right,220,`全長 ${fmt(L)} mm`,bottom+2,bottom+2);
+    for(const m of design.members){const x=left+clamp(Number(m.x)||0,0,L)*sx,type=String(m.type||"");if(type.includes("肋骨")||type.includes("横桁")||type.includes("隔壁"))c+=`<line x1="${x}" y1="${top+5}" x2="${x}" y2="${bottom-3}" stroke="#e05a35" stroke-width="1.5" opacity=".9"/>`;else if(type.includes("キール"))c+=`<line x1="${left}" y1="${yKeel}" x2="${right}" y2="${yKeel}" stroke="#f0a020" stroke-width="3"/>`;else if(type.includes("甲板"))c+=`<line x1="${left+L*.03*sx}" y1="${yDeck+2}" x2="${right-L*.1*sx}" y2="${yDeck+2}" stroke="#2482e0" stroke-width="2"/>`;}
     c+=dimV(top,bottom,590,`深さ ${fmt(D)}`,right,right);
     return svgBase(c,"側面図");
   }
@@ -169,6 +222,7 @@
     const shape=leftPts.concat(rightPts.reverse()).map(p=>p.join(",")).join(" ");
     const water=bottom-T*scaleZ;
     let c=`<polygon points="${shape}" fill="#d3e9ed" stroke="#267b8d" stroke-width="2"/><line x1="${cx-half}" y1="${water}" x2="${cx+half}" y2="${water}" stroke="#168c91" stroke-dasharray="6 4"/><line x1="${cx}" y1="40" x2="${cx}" y2="${bottom+3}" stroke="#8d9ca8" stroke-dasharray="5 4"/><text x="${cx}" y="20" text-anchor="middle" font-size="11" fill="#526777">正面断面（概念形状）</text>`;
+    for(const m of design.members){const type=String(m.type||"");if(type.includes("キール"))c+=`<line x1="${cx}" y1="${bottom}" x2="${cx}" y2="${bottom-10}" stroke="#f0a020" stroke-width="4"/>`;if(type.includes("肋骨"))c+=`<path d="M${cx-half*.85} ${bottom-10} Q${cx} ${top+8} ${cx+half*.85} ${bottom-10}" fill="none" stroke="#e05a35" stroke-width="2"/>`;if(type.includes("縦通"))c+=`<line x1="${cx-half*.45}" y1="${top+15}" x2="${cx-half*.45}" y2="${bottom-8}" stroke="#2482e0" stroke-width="2"/>`;}
     c+=dimH(cx-half,cx+half,220,`幅 ${fmt(B)} mm`,bottom,bottom);
     c+=dimV(top,bottom,565,`深さ ${fmt(D)}`,cx+half,cx+half);
     return svgBase(c,"正面図");
@@ -195,6 +249,7 @@
   function exportJson(){download("ship-design.json",JSON.stringify(serialize(),null,2),"application/json");}
   function loadDesign(data){const d=data.design||data;if(!d||!d.length)throw new Error("設計データの形式が違います");design={...structuredClone(defaults),...d,members:Array.isArray(d.members)?d.members:[]};applyInputs();$("saveStatus").textContent="読み込み済み";}
   inputIds.forEach(id=>$(id).addEventListener("input",()=>{readInputs();markDirty();}));
+  $("hullTransparent").addEventListener("change",()=>{updateHullMaterial();markDirty();});
   document.querySelectorAll(".nav").forEach(btn=>btn.addEventListener("click",()=>{document.querySelectorAll(".nav").forEach(n=>n.classList.toggle("active",n===btn));document.querySelectorAll(".panel").forEach(p=>p.classList.toggle("active",p.id==="panel-"+btn.dataset.panel));const t={hull:["船体モデル","主要寸法と船首・船尾形状を編集します。各ビューは同じ寸法データを参照します。"],structure:["内部・外部構造","構造部材を登録し、位置と基本情報を管理します。"],checks:["計算・警告","概算値と入力チェックを確認します。"],files:["保存・出力","設計データの保存・再読み込みと出力機能を管理します。"]};$("pageTitle").textContent=t[btn.dataset.panel][0];$("pageSubtitle").textContent=t[btn.dataset.panel][1];if(btn.dataset.panel==="hull"&&renderer){const host=$("threeHost");camera.aspect=host.clientWidth/Math.max(1,host.clientHeight);renderer.setSize(host.clientWidth,host.clientHeight);camera.updateProjectionMatrix();if(window._shipFrame)window._shipFrame();}}));
   [$("saveBtn"),$("saveBtn2")].forEach(b=>b.addEventListener("click",saveLocal));[$("exportJsonBtn"),$("exportJsonBtn2")].forEach(b=>b.addEventListener("click",exportJson));
   [$("importJsonInput"),$("importJsonInput2")].forEach(el=>el.addEventListener("change",async e=>{const f=e.target.files[0];if(!f)return;try{loadDesign(JSON.parse(await f.text()));}catch(err){alert("読み込みに失敗しました: "+err.message);}e.target.value="";}));
