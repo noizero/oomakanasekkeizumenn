@@ -188,7 +188,7 @@
     hullMesh.add(new THREE.LineSegments(new THREE.EdgesGeometry(hullMesh.geometry,28),new THREE.LineBasicMaterial({color:0x17485d,transparent:true,opacity:.55})));
     updateHullMaterial();rebuildStructure3D();
     if(window._shipFrame)window._shipFrame();
-    $("modelStatus").textContent="モデル更新済み";
+    $("modelStatus").textContent=`更新済み：断面 ${({u:"U型",v:"V型",round:"丸型",chine:"ハードチャイン型"})[design.hullForm]||"U型"}／船首 ${$("bow").selectedOptions[0].textContent}／船尾 ${$("stern").selectedOptions[0].textContent}`;
   }
   // Orthographic drawing helper: geometry and dimensions use the same principal dimensions.
   function dimH(x1,x2,y,label,extY1,extY2){
@@ -232,19 +232,19 @@
     return svgBase(c,"側面図");
   }
   function svgFront(){
-    const B=design.beam,D=design.depth,T=design.draft,W=620,H=245,cx=310,top=55,bottom=185,half=165,scaleZ=(bottom-top)/D;
-    const pts=[];
-    for(let j=0;j<=40;j++){const theta=Math.PI*j/40;const y=Math.cos(theta)*half;const z=top+(1-Math.sin(theta))*(bottom-top);pts.push([cx+y,z]);}
-    const outline=pts.map(p=>p.join(",")).join(" ")+" "+pts.slice().reverse().map(p=>p.join(",")).join(" ");
-    // Use a closed, symmetric section silhouette.
-    const leftPts=[],rightPts=[];
-    for(let j=0;j<=30;j++){const u=j/30;const z=bottom-(bottom-top)*u;const halfW=half*Math.pow(Math.max(0,1-Math.pow(1-u,2)),.55);leftPts.push([cx-halfW,z]);rightPts.push([cx+halfW,z]);}
-    const shape=leftPts.concat(rightPts.reverse()).map(p=>p.join(",")).join(" ");
+    const B=design.beam,D=design.depth,T=design.draft,cx=310,top=55,bottom=185,halfPx=165,scaleZ=(bottom-top)/D;
+    const st=station(.5), scaleY=halfPx/Math.max(B/2,1e-6), pts=[];
+    // Draw the same cross-section function used by the 3D hull and frame members.
+    for(let j=0;j<=96;j++){
+      const p=crossSection(st,2*Math.PI*j/96);
+      pts.push([cx+p[1]*scaleY,bottom-p[2]*scaleZ]);
+    }
+    const shape=pts.map(p=>p.join(',')).join(' ');
     const water=bottom-T*scaleZ;
-    let c=`<polygon points="${shape}" fill="#d3e9ed" stroke="#267b8d" stroke-width="2"/><line x1="${cx-half}" y1="${water}" x2="${cx+half}" y2="${water}" stroke="#168c91" stroke-dasharray="6 4"/><line x1="${cx}" y1="40" x2="${cx}" y2="${bottom+3}" stroke="#8d9ca8" stroke-dasharray="5 4"/><text x="${cx}" y="20" text-anchor="middle" font-size="11" fill="#526777">正面断面（概念形状）</text>`;
-    for(const m of design.members){const type=String(m.type||"");if(type.includes("キール"))c+=`<line x1="${cx}" y1="${bottom}" x2="${cx}" y2="${bottom-10}" stroke="#f0a020" stroke-width="4"/>`;if(type.includes("肋骨"))c+=`<path d="M${cx-half*.85} ${bottom-10} Q${cx} ${top+8} ${cx+half*.85} ${bottom-10}" fill="none" stroke="#e05a35" stroke-width="2"/>`;if(type.includes("縦通"))c+=`<line x1="${cx-half*.45}" y1="${top+15}" x2="${cx-half*.45}" y2="${bottom-8}" stroke="#2482e0" stroke-width="2"/>`;}
-    c+=dimH(cx-half,cx+half,220,`幅 ${fmt(B)} mm`,bottom,bottom);
-    c+=dimV(top,bottom,565,`深さ ${fmt(D)}`,cx+half,cx+half);
+    let c=`<polygon points="${shape}" fill="#d3e9ed" stroke="#267b8d" stroke-width="2" stroke-linejoin="round"/><line x1="${cx-halfPx}" y1="${water}" x2="${cx+halfPx}" y2="${water}" stroke="#168c91" stroke-dasharray="6 4"/><line x1="${cx}" y1="40" x2="${cx}" y2="${bottom+3}" stroke="#8d9ca8" stroke-dasharray="5 4"/><text x="${cx}" y="20" text-anchor="middle" font-size="11" fill="#526777">正面断面（3Dと共通）</text>`;
+    for(const m of design.members){const type=String(m.type||"");if(type.includes("キール"))c+=`<line x1="${cx}" y1="${bottom-D*.06*scaleZ}" x2="${cx}" y2="${bottom-D*.12*scaleZ}" stroke="#f0a020" stroke-width="4"/>`;if(type.includes("肋骨"))c+=`<polyline points="${shape}" fill="none" stroke="#e05a35" stroke-width="1.6"/>`;if(type.includes("縦通"))c+=`<line x1="${cx-halfPx*.45}" y1="${top+15}" x2="${cx-halfPx*.45}" y2="${bottom-8}" stroke="#2482e0" stroke-width="2"/>`;}
+    c+=dimH(cx-halfPx,cx+halfPx,220,`幅 ${fmt(B)} mm`,bottom,bottom);
+    c+=dimV(top,bottom,565,`深さ ${fmt(D)}`,cx+halfPx,cx+halfPx);
     return svgBase(c,"正面図");
   }
   function updateDrawings(){$("topView").innerHTML=svgTop();$("sideView").innerHTML=svgSide();$("frontView").innerHTML=svgFront();}
@@ -268,7 +268,11 @@
   function saveLocal(){readInputs();localStorage.setItem("shipDesignStudio",JSON.stringify(serialize()));$("saveStatus").textContent="ブラウザに保存済み";$("fileMessage").textContent="このブラウザに保存しました。別端末には自動同期されません。";}
   function exportJson(){download("ship-design.json",JSON.stringify(serialize(),null,2),"application/json");}
   function loadDesign(data){const d=data.design||data;if(!d||!d.length)throw new Error("設計データの形式が違います");design={...structuredClone(defaults),...d,members:Array.isArray(d.members)?d.members:[]};applyInputs();$("saveStatus").textContent="読み込み済み";}
-  inputIds.forEach(id=>$(id).addEventListener("input",()=>{readInputs();markDirty();}));
+  inputIds.forEach(id=>{
+    const el=$(id), refresh=()=>{readInputs();markDirty();};
+    el.addEventListener("input",refresh);
+    if(el.tagName==="SELECT"||el.type==="checkbox")el.addEventListener("change",refresh);
+  });
   $("hullTransparent").addEventListener("change",()=>{updateHullMaterial();markDirty();});
   document.querySelectorAll(".nav").forEach(btn=>btn.addEventListener("click",()=>{document.querySelectorAll(".nav").forEach(n=>n.classList.toggle("active",n===btn));document.querySelectorAll(".panel").forEach(p=>p.classList.toggle("active",p.id==="panel-"+btn.dataset.panel));const t={hull:["船体モデル","主要寸法と船首・船尾形状を編集します。各ビューは同じ寸法データを参照します。"],structure:["内部・外部構造","構造部材を登録し、位置と基本情報を管理します。"],checks:["計算・警告","概算値と入力チェックを確認します。"],files:["保存・出力","設計データの保存・再読み込みと出力機能を管理します。"]};$("pageTitle").textContent=t[btn.dataset.panel][0];$("pageSubtitle").textContent=t[btn.dataset.panel][1];if(btn.dataset.panel==="hull"&&renderer){const host=$("threeHost");camera.aspect=host.clientWidth/Math.max(1,host.clientHeight);renderer.setSize(host.clientWidth,host.clientHeight);camera.updateProjectionMatrix();if(window._shipFrame)window._shipFrame();}}));
   [$("saveBtn"),$("saveBtn2")].forEach(b=>b.addEventListener("click",saveLocal));[$("exportJsonBtn"),$("exportJsonBtn2")].forEach(b=>b.addEventListener("click",exportJson));
