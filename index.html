@@ -1,0 +1,95 @@
+<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#10243a">
+  <title>Ship Design Studio</title>
+  <link rel="stylesheet" href="./style.css">
+  <script src="https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.min.js"></script>
+</head>
+<body>
+<header class="topbar">
+  <div class="brand"><span class="brand-mark">船</span><div><strong>Ship Design Studio</strong><small>概念設計・設計協議用プロトタイプ</small></div></div>
+  <div class="top-actions">
+    <span id="saveStatus" class="status">未保存の変更</span>
+    <button id="saveBtn" class="primary">ブラウザに保存</button>
+    <button id="exportJsonBtn">JSONを書き出す</button>
+    <label class="file-button">JSONを読み込む<input id="importJsonInput" type="file" accept=".json,application/json"></label>
+  </div>
+</header>
+<div class="layout">
+  <aside class="sidebar">
+    <div class="section-title">設計メニュー</div>
+    <button class="nav active" data-panel="hull">01　船体モデル</button>
+    <button class="nav" data-panel="structure">02　内部・外部構造</button>
+    <button class="nav" data-panel="checks">03　計算・警告</button>
+    <button class="nav" data-panel="files">04　保存・出力</button>
+    <div class="sidebar-note"><strong>設計状態</strong><div class="state-row"><span class="dot yellow"></span> 概念設計段階</div><p>このアプリは予備検討用です。計算結果は船舶の安全性や規則適合を保証しません。</p></div>
+  </aside>
+  <main>
+    <section class="workspace-head">
+      <div><div class="eyebrow">PROJECT / CONCEPT 001</div><h1 id="pageTitle">船体モデル</h1><p id="pageSubtitle">主要寸法と船首・船尾形状を編集します。各ビューは同じ寸法データを参照します。</p></div>
+      <div class="unit-chip">単位 <b>mm</b></div>
+    </section>
+    <section id="panel-hull" class="panel active">
+      <div class="metrics">
+        <div class="metric"><span>全長 LOA</span><strong id="metricLength">30,000 <small>mm</small></strong></div>
+        <div class="metric"><span>最大幅 B</span><strong id="metricBeam">6,000 <small>mm</small></strong></div>
+        <div class="metric"><span>型深さ D</span><strong id="metricDepth">3,000 <small>mm</small></strong></div>
+        <div class="metric"><span>喫水 T</span><strong id="metricDraft">1,800 <small>mm</small></strong></div>
+      </div>
+      <div class="model-grid">
+        <article class="view-card view-3d"><div class="view-heading"><div><strong>3D 船体モデル</strong><small>ドラッグで回転・ホイールで拡大縮小</small></div><span class="view-tag">LIVE</span></div><div id="threeHost" class="three-host"><div class="loading">3Dモデルを準備中…</div></div><div class="view-footer"><span>中心線対称を初期設定</span><span id="modelStatus">モデル更新待ち</span></div></article>
+        <article class="view-card"><div class="view-heading"><div><strong>平面図</strong><small>上から見た船体</small></div><span class="view-tag">TOP</span></div><div id="topView" class="drawing"></div></article>
+        <article class="view-card"><div class="view-heading"><div><strong>側面図</strong><small>横から見た船体</small></div><span class="view-tag">SIDE</span></div><div id="sideView" class="drawing"></div></article>
+        <article class="view-card"><div class="view-heading"><div><strong>正面図</strong><small>前から見た船体</small></div><span class="view-tag">FRONT</span></div><div id="frontView" class="drawing"></div></article>
+      </div>
+      <div class="lower-grid">
+        <article class="card"><div class="card-title"><h2>主要寸法</h2><span class="muted">数値を変更すると各ビューを更新</span></div>
+          <div class="input-grid">
+            <label>全長 LOA (mm)<input id="length" type="number" min="1000" step="100" value="30000"></label>
+            <label>最大幅 B (mm)<input id="beam" type="number" min="500" step="100" value="6000"></label>
+            <label>型深さ D (mm)<input id="depth" type="number" min="500" step="100" value="3000"></label>
+            <label>喫水 T (mm)<input id="draft" type="number" min="100" step="50" value="1800"></label>
+            <label>水密度 (kg/m³)<input id="density" type="number" min="900" max="1200" step="1" value="1025"></label>
+            <label>断面数<input id="stations" type="number" min="5" max="41" step="2" value="15"></label>
+          </div>
+          <div class="inline-controls"><label class="check"><input id="symmetry" type="checkbox" checked> 中心線に対して左右対称</label><button id="resetDimsBtn">初期寸法に戻す</button></div>
+        </article>
+        <article class="card"><div class="card-title"><h2>船首・船尾形状</h2><span class="muted">プリセット</span></div>
+          <div class="input-grid">
+            <label>船首形状<select id="bow"><option value="bulbous">バルバス・バウ</option><option value="clipper">突出型</option><option value="vertical">垂直船首</option><option value="raked" selected>傾斜・鋭角</option><option value="custom">カスタム</option></select></label>
+            <label>船尾形状<select id="stern"><option value="transom" selected>トランサム</option><option value="cruiser">巡洋艦型・丸型</option><option value="counter">カウンター型</option><option value="passenger">旅客・貨客向け</option><option value="custom">カスタム</option></select></label>
+          </div>
+          <div class="note">形状プリセットは初期形状です。実船の設計線図や規則適合を示すものではありません。</div>
+        </article>
+      </div>
+    </section>
+    <section id="panel-structure" class="panel">
+      <div class="two-col">
+        <article class="card"><div class="card-title"><h2>構造部材一覧</h2><button id="addMemberBtn" class="primary">＋ 部材を追加</button></div>
+          <p class="muted">外板・甲板・キール・肋骨などを独立したデータとして管理します。現在は初期管理機能です。</p>
+          <div class="table-wrap"><table><thead><tr><th>部材名</th><th>種類</th><th>位置 X (mm)</th><th>高さ (mm)</th><th>数量</th><th>操作</th></tr></thead><tbody id="memberRows"></tbody></table></div>
+        </article>
+        <article class="card"><div class="card-title"><h2>構造データの考え方</h2></div><ul class="feature-list"><li>船体外板・外形</li><li>内部構造部材</li><li>貨物倉・タンク・機関室などの区画</li><li>縦強度計算などに使う計算区間</li></ul><div class="note">区画と計算区間は別々に管理します。部材数だけでは接続状態や強度を判定しません。</div></article>
+      </div>
+    </section>
+    <section id="panel-checks" class="panel">
+      <div class="metrics"><div class="metric"><span>概算排水容積</span><strong id="calcVolume">—</strong></div><div class="metric"><span>概算排水量</span><strong id="calcDisplacement">—</strong></div><div class="metric"><span>方形係数（仮）</span><strong id="calcCb">—</strong></div><div class="metric"><span>入力状態</span><strong id="calcStatus">未評価</strong></div></div>
+      <article class="card"><div class="card-title"><h2>入力チェックと注意事項</h2><span class="muted">検証済みの規則計算ではありません</span></div><div id="warnings" class="warning-list"></div><div class="note">排水容積は簡易的な船型係数を仮定した概算です。実際の船体形状から積分した値ではありません。正式な設計判断には利用しないでください。</div></article>
+      <article class="card"><div class="card-title"><h2>計算範囲</h2></div><p>このプロトタイプでは主要寸法から概算値を表示します。材料強度、荷重、支持条件、座屈、疲労、腐食代、適用規則を含む構造強度評価は未実装です。</p></article>
+    </section>
+    <section id="panel-files" class="panel">
+      <div class="two-col">
+        <article class="card"><div class="card-title"><h2>設計データ</h2></div><p>設計データをJSON形式で保存し、後から読み込んで編集を再開できます。</p><div class="action-stack"><button id="saveBtn2" class="primary">ブラウザに保存</button><button id="exportJsonBtn2">JSONを書き出す</button><label class="file-button wide">JSONを読み込む<input id="importJsonInput2" type="file" accept=".json,application/json"></label></div><div id="fileMessage" class="muted"></div></article>
+        <article class="card"><div class="card-title"><h2>今後の出力拡張</h2></div><div class="export-item"><strong>DXF</strong><span>2D図面出力 — 未実装</span></div><div class="export-item"><strong>STEP</strong><span>CAD編集可能な面・ソリッド — 未実装・要検証</span></div><div class="export-item"><strong>STL / OBJ</strong><span>3Dメッシュ出力 — 未実装</span></div><div class="note">出力形式を名乗るだけの拡張子変更は行いません。形式ごとに正しいデータ生成を実装します。</div></article>
+      </div>
+    </section>
+    <footer>Ship Design Studio · 初期プロトタイプ · 設計協議・概念検討専用</footer>
+  </main>
+</div>
+<dialog id="memberDialog"><form method="dialog" id="memberForm"><div class="dialog-head"><h2>構造部材を追加</h2><button class="icon-button" value="cancel" aria-label="閉じる">×</button></div><label>部材名<input id="memberName" required value="横桁"></label><label>種類<select id="memberType"><option>横桁</option><option>肋骨</option><option>縦通材</option><option>キール</option><option>外板</option><option>甲板</option><option>隔壁</option><option>床板</option><option>その他</option></select></label><div class="input-grid"><label>位置 X (mm)<input id="memberX" type="number" value="15000"></label><label>高さ (mm)<input id="memberZ" type="number" value="1200"></label><label>数量<input id="memberCount" type="number" min="1" value="1"></label></div><div class="dialog-actions"><button value="cancel">キャンセル</button><button id="confirmMemberBtn" value="default" class="primary">追加</button></div></form></dialog>
+<script src="./app.js"></script>
+</body>
+</html>
