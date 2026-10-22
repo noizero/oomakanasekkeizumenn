@@ -26,70 +26,99 @@
     const base=Math.pow(Math.max(0,Math.sin(Math.PI*t)),0.62);
     let w=(B/2)*base*(0.91+0.09*Math.cos(2*Math.PI*(t-.5)));
 
-    // Stern geometry: the aftmost station has non-zero breadth for a vertical tanker stern.
-    const sternU=clamp((.22-t)/.22,0,1);
-    if(design.stern==="tanker"){
-      const u=clamp(t/.14,0,1), smooth=u*u*(3-2*u);
-      w=(B*.44)*(1-smooth)+w*smooth;
-    } else if(design.stern==="cruiser") {
-      w*=1-0.58*Math.pow(sternU,1.4);
-    } else if(design.stern==="counter") {
-      w*=1-0.24*Math.pow(sternU,1.2);
-    } else if(design.stern==="passenger") {
-      w*=1-0.32*Math.pow(sternU,1.1);
+    // Stern width and end shape. Transom/tanker ends must retain a finite breadth;
+    // rounded sterns taper toward the centreline.
+    const sternU=clamp((.24-t)/.24,0,1);
+    if(design.stern==="tanker") {
+      const u=clamp(t/.16,0,1), smooth=u*u*(3-2*u);
+      w=(B*.42)*(1-smooth)+w*smooth;
     } else if(design.stern==="transom") {
-      w*=1-0.08*Math.pow(sternU,2);
+      const u=clamp(t/.13,0,1), smooth=u*u*(3-2*u);
+      w=(B*.30)*(1-smooth)+w*smooth;
+    } else if(design.stern==="cruiser") {
+      w*=1-.62*Math.pow(sternU,1.2);
+    } else if(design.stern==="counter") {
+      w*=1-.28*Math.pow(sternU,1.2);
+    } else if(design.stern==="passenger") {
+      w*=1-.38*Math.pow(sternU,1.15);
     } else {
-      w*=1-0.3*Math.pow(sternU,1.2);
+      w*=1-.35*Math.pow(sternU,1.2);
     }
 
-    // Bow geometry. Vertical and clipper bows finish with a flat, visible end face.
-    const bowU=clamp((t-.76)/.24,0,1);
+    // Bow width is distinct from the longitudinal rake applied in crossSection().
+    const bowU=clamp((t-.72)/.28,0,1);
     if(design.bow==="raked") {
-      w*=1-0.72*Math.pow(bowU,1.25);
+      w*=1-.92*Math.pow(bowU,1.15);
     } else if(design.bow==="clipper") {
-      w*=1-0.48*Math.pow(bowU,1.1);
-      const u=clamp((t-.90)/.10,0,1), smooth=u*u*(3-2*u);
-      w=w*(1-smooth)+(B*.10)*smooth;
-    } else if(design.bow==="vertical") {
-      w*=1-0.12*Math.pow(bowU,1.2);
       const u=clamp((t-.88)/.12,0,1), smooth=u*u*(3-2*u);
-      w=w*(1-smooth)+(B*.22)*smooth;
+      w=w*(1-smooth)+(B*.12)*smooth;
+    } else if(design.bow==="vertical") {
+      const u=clamp((t-.86)/.14,0,1), smooth=u*u*(3-2*u);
+      w=w*(1-smooth)+(B*.20)*smooth;
     } else if(design.bow==="bulbous") {
-      w*=1-0.64*Math.pow(bowU,1.15);
-      const bulb=Math.exp(-Math.pow((t-.91)/.045,2));
-      w+=B*.075*bulb*Math.sin(Math.PI*t);
+      w*=1-.78*Math.pow(bowU,1.1);
+      w+=B*.10*Math.exp(-Math.pow((t-.91)/.045,2));
     } else {
-      w*=1-0.5*Math.pow(bowU,1.2);
+      w*=1-.58*Math.pow(bowU,1.2);
     }
-    // Keep the ends finite for flat-ended bow/stern types; pointed types still taper to zero.
-    if(t===0 && design.stern!=="tanker") w=0;
-    if(t===1 && design.bow!=="vertical" && design.bow!=="clipper") w=0;
     w=Math.max(0,w);
-    return {x:(t-.5)*L, half:w, L,B,D};
+    return {x:(t-.5)*L, half:w, L,B,D,t};
   }
-    function crossSection(st,theta){
+  function longitudinalX(st,zFrac){
+    const {x,L,t}=st;
+    const bowU=clamp((t-.72)/.28,0,1), sternU=clamp((.24-t)/.24,0,1);
+    let dx=0;
+    if(design.bow==="raked") dx-=L*.14*Math.pow(bowU,1.15)*zFrac;
+    else if(design.bow==="clipper") dx+=L*.035*Math.pow(bowU,1.2)*zFrac;
+    else if(design.bow==="bulbous") dx+=L*.025*Math.pow(bowU,1.3)*(1-zFrac);
+    // Vertical/flat transom and tanker sterns stay upright; counter sterns overhang aft.
+    if(design.stern==="counter") dx-=L*.045*Math.pow(sternU,1.1)*zFrac;
+    else if(design.stern==="cruiser") dx+=L*.025*Math.pow(sternU,1.2)*zFrac;
+    else if(design.stern==="passenger") dx+=L*.015*Math.pow(sternU,1.2)*zFrac;
+    return x+dx;
+  }
+  function crossSection(st,theta){
     const {half,D}=st;
-    // theta 0..2pi around section: deck edges, bilge, keel, opposite bilge and deck.
     const y=half*Math.cos(theta);
-    const s=Math.sin(theta);
-    // Cross-section preset: U = fuller cargo-ship section with upright sides;
-    // V = fine small-craft bottom; round = smoothly rounded bilge; chine = angular panels.
-    // z is measured from the keel baseline and y from the centreline.
     const q=Math.min(1,Math.abs(y)/Math.max(half,1e-6));
-    let zNorm;
-    if(design.hullForm==="v"){
-      zNorm=Math.pow(q,1.85);
-    } else if(design.hullForm==="round"){
-      zNorm=Math.pow(q,0.58);
-    } else if(design.hullForm==="chine"){
-      zNorm=q<0.58 ? 0.12+(q/0.58)*0.20 : 0.32+((q-0.58)/0.42)*0.68;
+    let z;
+    if(theta < Math.PI){
+      z=D*.94;
     } else {
-      // U-shaped bottom rounds into nearly vertical sides near the upper hull.
-      zNorm=q<0.58 ? 0.10+0.22*Math.pow(q/0.58,0.65) : 0.32+0.68*Math.pow((q-0.58)/0.42,0.30);
+      let zNorm;
+      if(design.hullForm==="v") zNorm=Math.pow(q,1.85);
+      else if(design.hullForm==="round") zNorm=Math.pow(q,.58);
+      else if(design.hullForm==="chine") zNorm=q<.58?.12+(q/.58)*.20:.32+((q-.58)/.42)*.68;
+      else zNorm=q<.58?.10+.22*Math.pow(q/.58,.65):.32+.68*Math.pow((q-.58)/.42,.30);
+      z=D*.06+D*.88*zNorm;
     }
-    const z=(D*.06)+(D*.88)*zNorm;
-    return [st.x,y,z];
+    const zFrac=clamp(z/Math.max(D,1e-6),0,1);
+    return [longitudinalX(st,zFrac),y,z];
+  }
+
+  function buildHullGrid(){
+    // Draw only meaningful station and longitudinal curves, not every mesh
+    // triangle edge; this avoids the dense diagonal cross-hatching in the view.
+    const points=[]; const n=clamp(Math.round(design.stations),5,81), around=32;
+    const stationStep=Math.max(1,Math.round(n/12));
+    for(let i=0;i<=n;i+=stationStep){
+      const st=station(i/n); const ring=[];
+      for(let j=0;j<=around;j++)ring.push(new THREE.Vector3(...crossSection(st,2*Math.PI*(j%around)/around)));
+      points.push(...ring);
+    }
+    for(let j=0;j<around;j+=2){
+      const line=[];
+      for(let i=0;i<=n;i++)line.push(new THREE.Vector3(...crossSection(station(i/n),2*Math.PI*j/around)));
+      points.push(...line);
+    }
+    const geometry=new THREE.BufferGeometry().setFromPoints(points);
+    const material=new THREE.LineBasicMaterial({color:0x17485d,transparent:true,opacity:.42});
+    // Each line is separate so no unintended joins connect unrelated curves.
+    const group=new THREE.Group();let offset=0;
+    for(let i=0;i<=n;i+=stationStep){const count=around+1;const g=new THREE.BufferGeometry().setFromPoints(points.slice(offset,offset+count));group.add(new THREE.Line(g,material));offset+=count;}
+    for(let j=0;j<around;j+=2){const count=n+1;const g=new THREE.BufferGeometry().setFromPoints(points.slice(offset,offset+count));group.add(new THREE.Line(g,material));offset+=count;}
+    geometry.dispose();
+    return group;
   }
   function buildHullGeometry(){
     const n=clamp(Math.round(design.stations),5,81), around=32, verts=[],indices=[];
@@ -129,7 +158,7 @@
     hullMesh=new THREE.Mesh(buildHullGeometry(),new THREE.MeshStandardMaterial({color:0x2d8193,metalness:.12,roughness:.48,side:THREE.DoubleSide,transparent:true,opacity:$("hullTransparent").checked?.34:1,depthWrite:!$("hullTransparent").checked}));
     scene.add(hullMesh);
     structureGroup=new THREE.Group();scene.add(structureGroup);
-    const edges=new THREE.LineSegments(new THREE.EdgesGeometry(hullMesh.geometry,28),new THREE.LineBasicMaterial({color:0x17485d,transparent:true,opacity:.34}));hullMesh.add(edges);
+    hullMesh.add(buildHullGrid());
     let drag=false,px=0,py=0,yaw=-.55,pitch=.38,dist=1;
     function frame(){
       const L=design.length/1000,B=design.beam/1000,D=design.depth/1000;
@@ -184,8 +213,8 @@
   function update3D(){
     if(!scene||!hullMesh||!renderer)return;
     const old=hullMesh.geometry;hullMesh.geometry=buildHullGeometry();old.dispose();
-    const oldEdge=hullMesh.children[0];if(oldEdge){hullMesh.remove(oldEdge);oldEdge.geometry.dispose();oldEdge.material.dispose();}
-    hullMesh.add(new THREE.LineSegments(new THREE.EdgesGeometry(hullMesh.geometry,28),new THREE.LineBasicMaterial({color:0x17485d,transparent:true,opacity:.55})));
+    const oldGrid=hullMesh.children[0];if(oldGrid){hullMesh.remove(oldGrid);oldGrid.traverse(o=>{if(o.geometry)o.geometry.dispose();if(o.material)o.material.dispose();});}
+    hullMesh.add(buildHullGrid());
     updateHullMaterial();rebuildStructure3D();
     if(window._shipFrame)window._shipFrame();
     $("modelStatus").textContent=`更新済み：断面 ${({u:"U型",v:"V型",round:"丸型",chine:"ハードチャイン型"})[design.hullForm]||"U型"}／船首 ${$("bow").selectedOptions[0].textContent}／船尾 ${$("stern").selectedOptions[0].textContent}`;
@@ -213,24 +242,22 @@
   }
   function svgSide(){
     const L=design.length,D=design.depth,T=design.draft,left=70,right=550,top=65,bottom=178,sx=(right-left)/L,sz=(bottom-top)/D;
-    let sternTop=.03,bowTop=.12,sternBottom=0,bowBottom=.015;
-    if(design.stern==="tanker"){sternTop=0;sternBottom=0;}
-    else if(design.stern==="cruiser"){sternTop=.15;sternBottom=.06;}
-    else if(design.stern==="counter"){sternTop=.07;sternBottom=.025;}
-    else if(design.stern==="passenger"){sternTop=.10;sternBottom=.035;}
-    if(design.bow==="vertical"){bowTop=0;bowBottom=0;}
-    else if(design.bow==="clipper"){bowTop=.14;bowBottom=-.025;}
-    else if(design.bow==="bulbous"){bowTop=.20;bowBottom=-.035;}
-    else if(design.bow==="raked"){bowTop=.24;bowBottom=.025;}
-    const xSL=left+L*sternTop*sx,xBL=left+L*sternBottom*sx;
-    const xST=right-L*bowTop*sx,xBT=right-L*bowBottom*sx;
     const yDeck=top,yKeel=bottom-D*.06*sz,water=bottom-T*sz;
-    let c=`<polygon points="${xSL},${yDeck} ${xST},${yDeck} ${xBT},${yKeel} ${xBL},${yKeel}" fill="#d3e9ed" stroke="#267b8d" stroke-width="2" stroke-linejoin="round"/><line x1="${left}" y1="${water}" x2="${right}" y2="${water}" stroke="#168c91" stroke-dasharray="6 4" stroke-width="1.5"/><text x="${right}" y="${water-5}" text-anchor="end" fill="#168c91" font-size="10">喫水線 T=${fmt(T)} mm</text><text x="${left}" y="20" font-size="11" fill="#526777">船尾</text><text x="${right}" y="20" text-anchor="end" font-size="11" fill="#526777">船首</text>`;
+    const upper=[],lower=[];
+    for(let i=0;i<=100;i++){
+      const t=i/100,st=station(t);
+      const xt=longitudinalX(st,.94), xb=longitudinalX(st,.06);
+      upper.push([left+(xt+L/2)*sx,yDeck]);
+      lower.push([left+(xb+L/2)*sx,yKeel]);
+    }
+    const pts=upper.concat(lower.reverse()).map(p=>p.join(',')).join(' ');
+    let c=`<polygon points="${pts}" fill="#d3e9ed" stroke="#267b8d" stroke-width="2" stroke-linejoin="round"/><line x1="${left}" y1="${water}" x2="${right}" y2="${water}" stroke="#168c91" stroke-dasharray="6 4" stroke-width="1.5"/><text x="${right}" y="${water-5}" text-anchor="end" fill="#168c91" font-size="10">喫水線 T=${fmt(T)} mm</text><text x="${left}" y="20" font-size="11" fill="#526777">船尾</text><text x="${right}" y="20" text-anchor="end" font-size="11" fill="#526777">船首</text>`;
     c+=dimH(left,right,220,`全長 ${fmt(L)} mm`,bottom+2,bottom+2);
     for(const m of design.members){const x=left+clamp(Number(m.x)||0,0,L)*sx,type=String(m.type||"");if(type.includes("肋骨")||type.includes("横桁")||type.includes("隔壁"))c+=`<line x1="${x}" y1="${top+5}" x2="${x}" y2="${bottom-3}" stroke="#e05a35" stroke-width="1.5" opacity=".9"/>`;else if(type.includes("キール"))c+=`<line x1="${left}" y1="${yKeel}" x2="${right}" y2="${yKeel}" stroke="#f0a020" stroke-width="3"/>`;else if(type.includes("甲板"))c+=`<line x1="${left+L*.03*sx}" y1="${yDeck+2}" x2="${right-L*.1*sx}" y2="${yDeck+2}" stroke="#2482e0" stroke-width="2"/>`;}
     c+=dimV(top,bottom,590,`深さ ${fmt(D)}`,right,right);
     return svgBase(c,"側面図");
   }
+
   function svgFront(){
     const B=design.beam,D=design.depth,T=design.draft,cx=310,top=55,bottom=185,halfPx=165,scaleZ=(bottom-top)/D;
     const st=station(.5), scaleY=halfPx/Math.max(B/2,1e-6), pts=[];
