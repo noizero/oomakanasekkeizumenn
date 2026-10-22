@@ -1,9 +1,9 @@
 (() => {
   "use strict";
   const $ = id => document.getElementById(id);
-  const defaults = {length:30000,beam:6000,depth:3000,draft:1800,density:1025,stations:21,symmetry:true,bow:"raked",stern:"transom",members:[]};
+  const defaults = {length:30000,beam:6000,depth:3000,draft:1800,density:1025,stations:21,symmetry:true,hullForm:"u",bow:"raked",stern:"transom",members:[]};
   let design = structuredClone(defaults), scene, camera, renderer, hullMesh, structureGroup, resizeObserver, renderRequested=false;
-  const inputIds=["length","beam","depth","draft","density","stations","symmetry","bow","stern"];
+  const inputIds=["length","beam","depth","draft","density","stations","symmetry","hullForm","bow","stern"];
   const fmt=n=>Math.round(n).toLocaleString("ja-JP");
   const clamp=(x,a,b)=>Math.max(a,Math.min(b,x));
   function readInputs(){
@@ -22,53 +22,73 @@
   function station(t){
     const L=design.length/1000,B=design.beam/1000,D=design.depth/1000;
     t=clamp(t,0,1);
-    let w;
-    // Stable, positive, continuous fullness curve with no abrupt disappearing ends.
+    // Smooth base fullness for the middle body.
     const base=Math.pow(Math.max(0,Math.sin(Math.PI*t)),0.62);
-    w=(B/2)*base*(0.91+0.09*Math.cos(2*Math.PI*(t-.5)));
-    // Tanker-like vertical stern: keep a broad transom section at the aft end,
-    // then blend smoothly into the normal hull fullness over the first 12% of length.
+    let w=(B/2)*base*(0.91+0.09*Math.cos(2*Math.PI*(t-.5)));
+
+    // Stern geometry: the aftmost station has non-zero breadth for a vertical tanker stern.
+    const sternU=clamp((.22-t)/.22,0,1);
     if(design.stern==="tanker"){
-      const u=clamp(t/.12,0,1), smooth=u*u*(3-2*u);
+      const u=clamp(t/.14,0,1), smooth=u*u*(3-2*u);
       w=(B*.44)*(1-smooth)+w*smooth;
+    } else if(design.stern==="cruiser") {
+      w*=1-0.58*Math.pow(sternU,1.4);
+    } else if(design.stern==="counter") {
+      w*=1-0.24*Math.pow(sternU,1.2);
+    } else if(design.stern==="passenger") {
+      w*=1-0.32*Math.pow(sternU,1.1);
+    } else if(design.stern==="transom") {
+      w*=1-0.08*Math.pow(sternU,2);
+    } else {
+      w*=1-0.3*Math.pow(sternU,1.2);
     }
-    // Bow region: last ~24% of length, smooth transitions to the stem.
+
+    // Bow geometry. Vertical and clipper bows finish with a flat, visible end face.
     const bowU=clamp((t-.76)/.24,0,1);
-    if(design.bow==="raked")w*=1-0.72*Math.pow(bowU,1.25);
-    else if(design.bow==="clipper")w*=1-0.48*Math.pow(bowU,1.1);
-    else if(design.bow==="vertical")w*=1-0.12*Math.pow(bowU,1.2);
-    else if(design.bow==="bulbous"){
-      // Main stem tapers normally; a visible local bulb broadens near the waterline region.
-      w*=1-0.64*Math.pow(bowU,1.15);
-      const bulb=Math.exp(-Math.pow((t-.91)/.045,2));
-      w+=B*.075*bulb*Math.sin(Math.PI*t);
-    } else if(design.bow==="vertical"){
+    if(design.bow==="raked") {
+      w*=1-0.72*Math.pow(bowU,1.25);
+    } else if(design.bow==="clipper") {
+      w*=1-0.48*Math.pow(bowU,1.1);
+      const u=clamp((t-.90)/.10,0,1), smooth=u*u*(3-2*u);
+      w=w*(1-smooth)+(B*.10)*smooth;
+    } else if(design.bow==="vertical") {
       w*=1-0.12*Math.pow(bowU,1.2);
       const u=clamp((t-.88)/.12,0,1), smooth=u*u*(3-2*u);
       w=w*(1-smooth)+(B*.22)*smooth;
-    } else if(design.bow==="clipper"){
-      w*=1-0.48*Math.pow(bowU,1.1);
-      const u=clamp((t-.88)/.12,0,1), smooth=u*u*(3-2*u);
-      w=w*(1-smooth)+(B*.10)*smooth;
-    } else w*=1-0.5*Math.pow(bowU,1.2);
-    // Stern shape, smooth and independently selectable.
-    const sternU=clamp((.24-t)/.24,0,1);
-    if(design.stern==="tanker") { /* width is controlled by the vertical-transom blend above */ }
-    else if(design.stern==="cruiser")w*=1-0.58*Math.pow(sternU,1.4);
-    else if(design.stern==="counter")w*=1-0.24*Math.pow(sternU,1.2);
-    else if(design.stern==="passenger")w*=1-0.32*Math.pow(sternU,1.1);
-    else if(design.stern==="transom")w*=1-0.08*Math.pow(sternU,2);
-    else w*=1-0.3*Math.pow(sternU,1.2);
+    } else if(design.bow==="bulbous") {
+      w*=1-0.64*Math.pow(bowU,1.15);
+      const bulb=Math.exp(-Math.pow((t-.91)/.045,2));
+      w+=B*.075*bulb*Math.sin(Math.PI*t);
+    } else {
+      w*=1-0.5*Math.pow(bowU,1.2);
+    }
+    // Keep the ends finite for flat-ended bow/stern types; pointed types still taper to zero.
+    if(t===0 && design.stern!=="tanker") w=0;
+    if(t===1 && design.bow!=="vertical" && design.bow!=="clipper") w=0;
     w=Math.max(0,w);
     return {x:(t-.5)*L, half:w, L,B,D};
   }
-  function crossSection(st,theta){
+    function crossSection(st,theta){
     const {half,D}=st;
     // theta 0..2pi around section: deck edges, bilge, keel, opposite bilge and deck.
     const y=half*Math.cos(theta);
     const s=Math.sin(theta);
-    // Rounded V/U bottom, near-vertical upper sides. z measured from keel baseline.
-    const z=(D*.06)+(D*.88)*Math.pow(Math.abs(Math.cos(theta)),.72);
+    // Cross-section preset: U = fuller cargo-ship section with upright sides;
+    // V = fine small-craft bottom; round = smoothly rounded bilge; chine = angular panels.
+    // z is measured from the keel baseline and y from the centreline.
+    const q=Math.min(1,Math.abs(y)/Math.max(half,1e-6));
+    let zNorm;
+    if(design.hullForm==="v"){
+      zNorm=Math.pow(q,1.85);
+    } else if(design.hullForm==="round"){
+      zNorm=Math.pow(q,0.58);
+    } else if(design.hullForm==="chine"){
+      zNorm=q<0.58 ? 0.12+(q/0.58)*0.20 : 0.32+((q-0.58)/0.42)*0.68;
+    } else {
+      // U-shaped bottom rounds into nearly vertical sides near the upper hull.
+      zNorm=q<0.58 ? 0.10+0.22*Math.pow(q/0.58,0.65) : 0.32+0.68*Math.pow((q-0.58)/0.42,0.30);
+    }
+    const z=(D*.06)+(D*.88)*zNorm;
     return [st.x,y,z];
   }
   function buildHullGeometry(){
